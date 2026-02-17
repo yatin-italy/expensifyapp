@@ -24,6 +24,28 @@ const isUserCancelled = (err: unknown) => {
     return /cancel|did not share/.test(msg);
 };
 
+const getDownloadHeaders = (fileUrl: string) => {
+    const headers: Record<string, string> = {};
+
+    try {
+        const parsedURL = new URL(fileUrl);
+        const authToken = parsedURL.searchParams.get('authToken');
+        const encryptedAuthToken = parsedURL.searchParams.get('encryptedAuthToken');
+
+        if (authToken) {
+            headers.Cookie = `authToken=${authToken}`;
+        }
+
+        if (encryptedAuthToken) {
+            headers[CONST.CHAT_ATTACHMENT_TOKEN_KEY] = encryptedAuthToken;
+        }
+    } catch {
+        return headers;
+    }
+
+    return headers;
+};
+
 /**
  * Downloads the file to Documents section in iOS
  */
@@ -42,7 +64,7 @@ function downloadFile(fileUrl: string, fileName: string) {
             notification: true,
             path: `${path}/Expensify/${fileName}`,
         },
-    }).fetch('GET', fileUrl);
+    }).fetch('GET', fileUrl, getDownloadHeaders(fileUrl));
 }
 
 const postDownloadFile = (translate: LocalizedTranslate, url: string, fileName?: string, formData?: FormData, onDownloadFailed?: () => void) => {
@@ -158,6 +180,11 @@ const fileDownload: FileDownload = (translate, fileUrl, fileName, successMessage
                 showSuccessAlert(translate, successMessage);
             })
             .catch((err: Error) => {
+                if (onDownloadFailed && err.message !== CONST.IOS_CAMERA_ROLL_ACCESS_ERROR) {
+                    onDownloadFailed();
+                    return;
+                }
+
                 // iOS shows permission popup only once. Subsequent request will only throw an error.
                 // We catch the error and show a redirection link to the settings screen
                 if (err.message === CONST.IOS_CAMERA_ROLL_ACCESS_ERROR) {

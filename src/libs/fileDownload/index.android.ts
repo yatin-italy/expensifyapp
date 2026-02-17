@@ -33,10 +33,32 @@ function hasAndroidPermission(): Promise<boolean> {
     });
 }
 
+const getDownloadHeaders = (fileUrl: string) => {
+    const headers: Record<string, string> = {};
+
+    try {
+        const parsedURL = new URL(fileUrl);
+        const authToken = parsedURL.searchParams.get('authToken');
+        const encryptedAuthToken = parsedURL.searchParams.get('encryptedAuthToken');
+
+        if (authToken) {
+            headers.Cookie = `authToken=${authToken}`;
+        }
+
+        if (encryptedAuthToken) {
+            headers[CONST.CHAT_ATTACHMENT_TOKEN_KEY] = encryptedAuthToken;
+        }
+    } catch {
+        return headers;
+    }
+
+    return headers;
+};
+
 /**
  * Handling the download
  */
-function handleDownload(translate: LocalizedTranslate, url: string, fileName?: string, successMessage?: string, shouldUnlink = true): Promise<void> {
+function handleDownload(translate: LocalizedTranslate, url: string, fileName?: string, successMessage?: string, shouldUnlink = true, onDownloadFailed?: () => void): Promise<void> {
     return new Promise((resolve) => {
         const dirs = RNFetchBlob.fs.dirs;
 
@@ -60,7 +82,7 @@ function handleDownload(translate: LocalizedTranslate, url: string, fileName?: s
                     notification: false,
                     path: `${path}/Expensify/${attachmentName}`,
                 },
-            }).fetch('GET', url);
+            }).fetch('GET', url, getDownloadHeaders(url));
         }
 
         // Resolving the fetched attachment
@@ -91,6 +113,10 @@ function handleDownload(translate: LocalizedTranslate, url: string, fileName?: s
                 showSuccessAlert(translate, successMessage);
             })
             .catch(() => {
+                if (onDownloadFailed) {
+                    onDownloadFailed();
+                    return;
+                }
                 showGeneralErrorAlert(translate);
             })
             .finally(() => resolve());
@@ -153,7 +179,7 @@ const fileDownload: FileDownload = (translate, url, fileName, successMessage, _,
                     if (requestType === CONST.NETWORK.METHOD.POST) {
                         return postDownloadFile(translate, url, fileName, formData, onDownloadFailed);
                     }
-                    return handleDownload(translate, url, fileName, successMessage, shouldUnlink);
+                    return handleDownload(translate, url, fileName, successMessage, shouldUnlink, onDownloadFailed);
                 }
                 showPermissionErrorAlert(translate);
             })

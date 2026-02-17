@@ -9,7 +9,6 @@ import type {PartialDeep, ValueOf} from 'type-fest';
 import type {Emoji} from '@assets/emojis/types';
 import type {LocaleContextProps, LocalizedTranslate} from '@components/LocaleContextProvider';
 import * as ActiveClientManager from '@libs/ActiveClientManager';
-import addEncryptedAuthTokenToURL from '@libs/addEncryptedAuthTokenToURL';
 import {waitForWrites} from '@libs/API';
 import * as API from '@libs/API';
 import type {
@@ -66,9 +65,7 @@ import type {CustomRNImageManipulatorResult} from '@libs/cropOrRotateImage/types
 import DateUtils from '@libs/DateUtils';
 import * as EmojiUtils from '@libs/EmojiUtils';
 import * as Environment from '@libs/Environment/Environment';
-import {getOldDotURLFromEnvironment} from '@libs/Environment/Environment';
-import getEnvironment from '@libs/Environment/getEnvironment';
-import type EnvironmentType from '@libs/Environment/getEnvironment/types';
+import {getOldDotEnvironmentURL} from '@libs/Environment/Environment';
 import {getMicroSecondOnyxErrorWithTranslationKey, getMicroSecondTranslationErrorWithTranslationKey} from '@libs/ErrorUtils';
 import fileDownload from '@libs/fileDownload';
 import getIsNarrowLayout from '@libs/getIsNarrowLayout';
@@ -311,6 +308,10 @@ let conciergeReportIDOnyxConnect: string | undefined;
 let deprecatedCurrentUserAccountID = -1;
 /** @deprecated This value is deprecated and will be removed soon after migration. Use the email from useCurrentUserPersonalDetails hook instead. */
 let deprecatedCurrentUserLogin: string | undefined;
+/** @deprecated This value is deprecated and will be removed soon after migration. */
+let deprecatedCurrentUserAuthToken: string | undefined;
+/** @deprecated This value is deprecated and will be removed soon after migration. */
+let deprecatedCurrentUserEncryptedAuthToken: string | undefined;
 
 Onyx.connect({
     key: ONYXKEYS.SESSION,
@@ -322,6 +323,10 @@ Onyx.connect({
         }
         // eslint-disable-next-line @typescript-eslint/no-deprecated
         deprecatedCurrentUserLogin = value.email;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        deprecatedCurrentUserAuthToken = value.authToken;
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        deprecatedCurrentUserEncryptedAuthToken = value.encryptedAuthToken;
         deprecatedCurrentUserAccountID = value.accountID;
     },
 });
@@ -384,11 +389,6 @@ let deprecatedIntroSelected: OnyxEntry<IntroSelected> = {};
 Onyx.connect({
     key: ONYXKEYS.NVP_INTRO_SELECTED,
     callback: (val) => (deprecatedIntroSelected = val),
-});
-
-let environment: EnvironmentType;
-getEnvironment().then((env) => {
-    environment = env;
 });
 
 function clearGroupChat() {
@@ -5032,13 +5032,33 @@ function exportReportToPDF({reportID}: ExportReportPDFParams) {
 }
 
 function downloadReportPDF(fileName: string, reportName: string, translate: LocalizedTranslate, currentUserLogin: string) {
-    const baseURL = addTrailingForwardSlash(getOldDotURLFromEnvironment(environment));
-    const downloadFileName = `${reportName}.pdf`;
-    setDownload(fileName, true);
-    const pdfURL = `${baseURL}secure?secureType=pdfreport&filename=${encodeURIComponent(fileName)}&downloadName=${encodeURIComponent(downloadFileName)}&email=${encodeURIComponent(
-        currentUserLogin,
-    )}`;
-    fileDownload(translate, addEncryptedAuthTokenToURL(pdfURL, true), downloadFileName, '', Browser.isMobileSafari()).then(() => setDownload(fileName, false));
+    getOldDotEnvironmentURL().then((oldDotURL) => {
+        const baseURL = addTrailingForwardSlash(oldDotURL);
+        const downloadFileName = `${reportName}.pdf`;
+
+        const searchParams = new URLSearchParams({
+            secureType: 'pdfreport',
+            filename: fileName,
+            downloadName: downloadFileName,
+            email: currentUserLogin,
+        });
+
+        if (deprecatedCurrentUserAuthToken) {
+            searchParams.set('authToken', deprecatedCurrentUserAuthToken);
+        }
+
+        if (deprecatedCurrentUserEncryptedAuthToken) {
+            searchParams.set('encryptedAuthToken', deprecatedCurrentUserEncryptedAuthToken);
+        }
+
+        const pdfURL = `${baseURL}secure?${searchParams.toString()}`;
+
+        setDownload(fileName, true);
+
+        fileDownload(translate, pdfURL, downloadFileName, '', Browser.isMobileSafari())
+            .then(() => setDownload(fileName, false))
+            .catch(() => setDownload(fileName, false));
+    });
 }
 
 function setDeleteTransactionNavigateBackUrl(url: string) {

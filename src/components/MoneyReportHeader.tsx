@@ -1620,13 +1620,20 @@ function MoneyReportHeader({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [transactionThreadReportID]);
 
+    const triggerReportPDFDownload = useCallback(() => {
+        if (!reportPDFFilename) {
+            return;
+        }
+        downloadReportPDF(reportPDFFilename, moneyRequestReport?.reportName ?? '', translate, currentUserLogin ?? '');
+    }, [reportPDFFilename, moneyRequestReport?.reportName, currentUserLogin, translate]);
+
     useEffect(() => {
         if (!hasFinishedPDFDownload || !canTriggerAutomaticPDFDownload.current) {
             return;
         }
-        downloadReportPDF(reportPDFFilename, moneyRequestReport?.reportName ?? '', translate, currentUserLogin ?? '');
+        triggerReportPDFDownload();
         canTriggerAutomaticPDFDownload.current = false;
-    }, [hasFinishedPDFDownload, reportPDFFilename, moneyRequestReport?.reportName, translate, currentUserLogin]);
+    }, [hasFinishedPDFDownload, triggerReportPDFDownload]);
 
     const shouldShowBackButton = shouldDisplayBackButton || shouldUseNarrowLayout;
 
@@ -1965,7 +1972,7 @@ function MoneyReportHeader({
                                 if (!hasFinishedPDFDownload) {
                                     setIsPDFModalVisible(false);
                                 } else {
-                                    downloadReportPDF(reportPDFFilename, moneyRequestReport?.reportName ?? '', translate, currentUserLogin ?? '');
+                                    triggerReportPDFDownload();
                                 }
                             }}
                             text={hasFinishedPDFDownload ? translate('common.download') : translate('common.cancel')}

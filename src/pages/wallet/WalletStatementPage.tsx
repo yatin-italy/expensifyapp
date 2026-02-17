@@ -1,6 +1,8 @@
+import {emailSelector} from '@selectors/Session';
 import {format, getMonth, getYear} from 'date-fns';
 import {Str} from 'expensify-common';
 import React, {useCallback, useEffect, useState} from 'react';
+import {Platform} from 'react-native';
 import FullPageOfflineBlockingView from '@components/BlockingViews/FullPageOfflineBlockingView';
 import HeaderWithBackButton from '@components/HeaderWithBackButton';
 import ScreenWrapper from '@components/ScreenWrapper';
@@ -11,6 +13,10 @@ import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
 import usePrevious from '@hooks/usePrevious';
 import useThemePreference from '@hooks/useThemePreference';
+import {setDownload} from '@libs/actions/Download';
+import * as Link from '@libs/actions/Link';
+import addEncryptedAuthTokenToURL from '@libs/addEncryptedAuthTokenToURL';
+import * as Browser from '@libs/Browser';
 import {getOldDotURLFromEnvironment} from '@libs/Environment/Environment';
 import fileDownload from '@libs/fileDownload';
 import Navigation from '@libs/Navigation/Navigation';
@@ -26,6 +32,7 @@ type WalletStatementPageProps = PlatformStackScreenProps<WalletStatementNavigato
 
 function WalletStatementPage({route}: WalletStatementPageProps) {
     const [walletStatement] = useOnyx(ONYXKEYS.WALLET_STATEMENT, {canBeMissing: true});
+    const [currentUserLogin] = useOnyx(ONYXKEYS.SESSION, {selector: emailSelector});
     const themePreference = useThemePreference();
     const yearMonth = route.params.yearMonth ?? null;
     const isWalletStatementGenerating = walletStatement?.isGenerating ?? false;
@@ -51,17 +58,33 @@ function WalletStatementPage({route}: WalletStatementPageProps) {
         }
 
         setIsDownloading(true);
-        if (walletStatement?.[yearMonth]) {
-            // We already have a file URL for this statement, so we can download it immediately
+        if (walletStatement?.[yearMonth] && currentUserLogin) {
+            // We already have a file URL for this statement, so we can download it immediately.
+            // Auth token and email are required so the hybrid app's native download manager can authenticate with the secure endpoint.
             const downloadFileName = `Expensify_Statement_${yearMonth}.pdf`;
-            const fileName = walletStatement[yearMonth];
-            const pdfURL = `${baseURL}secure?secureType=pdfreport&filename=${fileName}&downloadName=${downloadFileName}`;
-            fileDownload(translate, pdfURL, downloadFileName).finally(() => setIsDownloading(false));
+            const fileName = walletStatement[yearMonth] as string;
+
+            setDownload(fileName, true);
+
+            const pdfURL = `${baseURL}secure?secureType=pdfreport&filename=${encodeURIComponent(fileName)}&downloadName=${encodeURIComponent(downloadFileName)}&email=${encodeURIComponent(currentUserLogin)}`;
+            const pdfURLWithAuth = addEncryptedAuthTokenToURL(pdfURL, true);
+
+            if (Platform.OS === 'ios') {
+                Link.openExternalLink(pdfURLWithAuth, true);
+                setDownload(fileName, false);
+                setIsDownloading(false);
+                return;
+            }
+
+            fileDownload(translate, pdfURLWithAuth, downloadFileName, '', Browser.isMobileSafari(), undefined, undefined, () => Link.openExternalLink(pdfURLWithAuth, true))
+                .then(() => setDownload(fileName, false))
+                .catch(() => setDownload(fileName, false))
+                .finally(() => setIsDownloading(false));
             return;
         }
 
         generateStatementPDF(yearMonth);
-    }, [baseURL, isWalletStatementGenerating, translate, walletStatement, yearMonth]);
+    }, [baseURL, currentUserLogin, isWalletStatementGenerating, translate, walletStatement, yearMonth]);
 
     // eslint-disable-next-line rulesdir/prefer-early-return
     useEffect(() => {
